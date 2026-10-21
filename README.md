@@ -7,7 +7,7 @@ This project runs one small Node.js web service in two places:
 
 Both places use the **same container image**.
 
-> **Walkthrough recording:** :
+> **Walkthrough recording:** : https://drive.google.com/file/d/1zszA8gDoi0h59_pzjm9BTc9rp3LqUFSI/view?usp=drive_link
 >
 > **Report:** [REPORT.md](REPORT.md) · **Evidence log:** [EVIDENCE.md](EVIDENCE.md)
 
