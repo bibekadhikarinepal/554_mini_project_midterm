@@ -166,7 +166,7 @@ kubectl patch service cs554-midterm --type=merge -p '{"spec":{"selector":{"app":
 - These parts connect only through labels.
 - In this test, every Pod check was green while every Service request failed.
 
-## 6. CS 554: Resources and readiness
+##  Resources and readiness
 
 **Requests and limits (per container)**
 
