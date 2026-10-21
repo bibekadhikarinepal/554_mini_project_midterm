@@ -1,0 +1,20 @@
+name: cs554-midterm
+services:
+  web:
+    # Built once on the host and copied into the VM with docker save/load,
+    # so Compose and Kubernetes run the identical image.
+    image: cs554-midterm:1.0.0
+    pull_policy: never
+    environment:
+      PORT: "8080"
+      SERVICE_NAME: compose-in-vm
+      MESSAGE: Hello from Docker Compose inside the Lima VM
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
+      start_period: 5s

@@ -1,0 +1,6 @@
+node_modules/
+.env
+*.log
+# Exported image archive used to move the image into the VM; never commit it.
+build/
+*.tar

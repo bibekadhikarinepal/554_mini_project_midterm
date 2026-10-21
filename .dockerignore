@@ -1,0 +1,4 @@
+# The Dockerfile copies only package.json and src/, so send nothing else.
+*
+!package.json
+!src

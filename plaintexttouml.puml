@@ -1,0 +1,98 @@
+@startuml architecture
+' Render: java -jar plantuml.jar -tsvg plaintexttouml.puml  (built-in Smetana layout, no Graphviz needed)
+!pragma layout smetana
+title Deployment architecture: one image, two environments
+
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam nodesep 30
+skinparam ranksep 45
+skinparam ArrowFontSize 10
+
+node "Mac host\nmacOS 14.6 · Apple Silicon" as mac #F7F8FA;line:4A5568 {
+
+  rectangle "Terminal on the Mac (host processes)\ncurl · kubectl · limactl · docker build · k3d" as term #FFFFFF;line:4A5568
+
+  rectangle "bridge100 · 192.168.64.1\nrouted directly · no port-forward" as bridge100 #FFFFFF;line:C53030
+
+  ' ================= Environment 1: Lima VM + Docker Compose =================
+  node "Lima VM  cs554-vm\nUbuntu 24.04 · Virtualization.framework (vz) · 2 vCPU · 2 GiB\neth0 192.168.5.15 · Lima's SSH path for limactl shell/copy" as lima #EEF7F0;line:2F855A {
+
+    rectangle "lima0 · 192.168.64.2 : 8080\nVM's address on the NAT network" as lima0 #FFFFFF;line:2F855A
+
+    node "Docker Engine 29.1 + Compose 2.40 (inside the VM)\ncompose.yaml · project cs554-midterm · restart: unless-stopped" as vmdocker #FFFFFF;line:718096 {
+
+      rectangle "Published port 0.0.0.0:8080 → container 8080/tcp\niptables DNAT → 172.18.0.2:8080 (docker-proxy also listens)" as pubport #FFF5F5;line:C53030
+
+      frame "bridge network cs554-midterm_default · 172.18.0.0/16" as composenet #FAFAFA;line:A0AEC0;line.dashed {
+        node "Container cs554-midterm-web-1 · 172.18.0.2\nimage cs554-midterm:1.0.0 · env PORT, SERVICE_NAME, MESSAGE\nhostname in responses = container ID" as webc #FFFAEB;line:B7791F {
+          component "Process: node src/server.js (PID 1)\nlistens on 0.0.0.0:8080 · GET / · GET /health\nrequestCount lives in this process's memory\nlogs → stdout → docker compose logs" as proc #FFFFFF;line:B7791F
+        }
+      }
+    }
+  }
+
+  ' ================= Environment 2: Docker Desktop VM + k3d =================
+  node "Docker Desktop Linux VM\nLinuxKit kernel 6.10 · Docker Engine 28.1" as dd #EEF3FB;line:2B6CB0 {
+
+    artifact "docker build → cs554-midterm:1.0.0\nconfig sha256:88e5976c698e…" as img #FFFAF0;line:DD6B20
+
+    frame "k3d cluster cs554 · k3s v1.35\nnodes share Docker network 172.22.0.0/16\nPods 10.42.x.x · Services 10.43.x.x" as k3d #F8FBFF;line:2B6CB0;line.dashed {
+
+      node "k3d-cs554-agent-0\nnode container · 172.22.0.4\ncontainerd · kube-proxy" as agent0 #FFFFFF;line:2B6CB0 {
+        rectangle "web Pod\n10.42.x.x:8080" as pod1 #FFFAEB;line:B7791F
+      }
+
+      node "k3d-cs554-agent-1\nnode container · 172.22.0.5\ncontainerd · kube-proxy" as agent1 #FFFFFF;line:2B6CB0 {
+        rectangle "client Pod\nbusybox wget" as client #FAF5FF;line:6B46C1
+      }
+
+      node "k3d-cs554-server-0\n172.22.0.3 · control plane\nAPI server · scheduler · controllers\ncontainerd · kube-proxy" as server0 #FFFFFF;line:2B6CB0 {
+        rectangle "web Pod\n10.42.x.x:8080" as pod2 #FFFAEB;line:B7791F
+      }
+
+      ' Kubernetes objects (logical, not processes)
+      rectangle "<<k8s object>>\nService cs554-midterm\nClusterIP 10.43.x.x:80\nselector app=cs554-midterm → targetPort 8080" as svc #FAF5FF;line:6B46C1;line.dashed
+      rectangle "<<k8s object>>\nDeployment cs554-midterm\nreplicas: 2 · ReplicaSet re-creates Pods" as deploy #FAF5FF;line:6B46C1;line.dashed
+      rectangle "<<k8s object>>\nEndpointSlice\nready Pod IPs (traffic goes only here)" as eps #FAF5FF;line:6B46C1;line.dashed
+    }
+  }
+}
+
+' ---------- HTTP, Compose (red) ----------
+term      -[#C53030,bold]-> bridge100 : curl http://192.168.64.2:8080/
+bridge100 -[#C53030,bold]-> lima0
+lima0     -[#C53030,bold]-> pubport
+pubport   -[#C53030,bold]-> proc : DNAT
+
+' ---------- HTTP, Kubernetes (purple) ----------
+client -[#6B46C1,bold]-> svc : wget
+svc    -[#6B46C1]-> eps : selector
+svc    -[#6B46C1,bold]-> pod1 : kube-proxy
+svc    -[#6B46C1,bold]-> pod2 : kube-proxy
+deploy .[#6B46C1].> pod1 : manages
+deploy .[#6B46C1].> pod2 : manages
+
+' ---------- Image distribution (orange) ----------
+term -[#DD6B20,dashed]-> img  : docker build
+img  -[#DD6B20,dashed]-> webc : docker save → limactl copy → docker load
+img  -[#DD6B20,dashed]-> k3d  : k3d image import
+
+' ---------- Control (gray) ----------
+term -[#4A5568,dotted]-> server0 : kubectl → API server\n(via k3d serverlb)
+
+legend bottom left
+  |= Line |= Meaning |
+  | <color:#C53030>━━ red</color> | HTTP, Compose: curl on the Mac → bridge100 → lima0:8080 → DNAT → container → node |
+  | <color:#6B46C1>━━ purple</color> | HTTP, Kubernetes: client Pod → Service ClusterIP → kube-proxy → a ready web Pod |
+  | <color:#DD6B20>╍╍ orange</color> | Image: built once on the Mac, copied into both environments (no registry) |
+  | <color:#4A5568>┈┈ gray</color> | Control: kubectl talks to the k3s API server |
+  | <<k8s object>> dashed | Kubernetes object (logical, not a process) |
+  | yellow box | Container / Pod running the same image |
+  |  | The scheduler chooses each Pod's node, so placement varies between runs. |
+  |  | kubectl port-forward tunnels through the API server to one Pod. |
+endlegend
+
+@enduml
